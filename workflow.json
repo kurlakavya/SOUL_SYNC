@@ -1,0 +1,112 @@
+{
+  "name": "SoulSync Telegram Mood Bot",
+  "nodes": [
+    {
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [-800, 0],
+      "parameters": {
+        "updates": ["message"]
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "id": "http-gemini",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [-400, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=YOUR_API_KEY",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Analyze the following user message:\\n\\n{{ $json.message.text }}\\n\\nYour task:\\n1. Detect the mood from ONLY these values:\\nhappy, good, normal, bored, sad\\n\\n2. Respond based on mood:\\n- sad → empathetic response + short motivational story + uplifting YouTube video link\\n- bored → joke + fun YouTube video link\\n- happy → cheerful response + energetic YouTube video link\\n- good or normal → positive response + light YouTube video link\\n\\nSTRICT OUTPUT RULES:\\n- Return ONLY valid JSON\\n- NO markdown\\n- NO explanations\\n- NO extra text\\n- JSON must start with { and end with }\\n\\nJSON FORMAT:\\n{\\n  \\\"mood\\\": \\\"sad\\\",\\n  \\\"response\\\": \\\"text\\\",\\n  \\\"story\\\": \\\"text\\\",\\n  \\\"playlist\\\": \\\"https://www.youtube.com/watch?v=VIDEO_ID\\\"\\n}\"\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.3\n  }\n}"
+      }
+    },
+    {
+      "id": "code-parse",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "jsCode": "// Read Gemini response\nconst rawText =\n  $json.candidates?.[0]?.content?.parts?.[0]?.text || \"\";\n\n// Parse Gemini JSON\nlet parsed;\ntry {\n  parsed = JSON.parse(rawText);\n} catch (e) {\n  parsed = {\n    mood: \"unknown\",\n    response: \"I'm here with you\",\n    story: \"\",\n    playlist: \"\"\n  };\n}\n\n// Build final Telegram message\nlet finalMessage = `Hey\\nMood: ${parsed.mood}\\n\\n${parsed.response}`;\n\nif (parsed.story) {\n  finalMessage += `\\n\\nStory:\\n${parsed.story}`;\n}\n\nif (parsed.playlist) {\n  finalMessage += `\\n\\nWatch here:\\n${parsed.playlist}`;\n}\n\nreturn [\n  {\n    json: {\n      text: finalMessage\n    }\n  }\n];"
+      }
+    },
+    {
+      "id": "telegram-send",
+      "name": "Send Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [400, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $node[\"Telegram Trigger\"].json.message.chat.id }}",
+        "text": "={{ $json.text }}"
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Send Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
